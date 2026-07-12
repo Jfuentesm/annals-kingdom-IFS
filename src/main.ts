@@ -1,5 +1,9 @@
 // @ts-nocheck
 import * as THREE from 'three';
+import { W_SIZE, N, CELL, RES, SEA_Y, CHUNKS, SPEEDS } from './core/constants';
+import { xmur3, sfc32, makeStream, rr, ri, pick, chance } from './core/rng';
+import { clamp, clamp01, lerp, smooth, dist2d, lerpHex, hexRGB, ord } from './core/math';
+import { makePerlin } from './core/perlin';
 
 /* =======================================================================
    ANNALS — Phase 1: The Land
@@ -23,76 +27,6 @@ window.addEventListener('error', e => {
   fatal(e.message + '\n' + (e.filename||'') + ':' + (e.lineno||''));
 });
 // three.js is now imported as an ES module (see top of file); the old CDN-load guard is obsolete.
-
-// ---------- 1. constants ----------
-const W_SIZE = 6000;            // world edge, meters
-const N = 512;                  // heightfield grid
-const CELL = W_SIZE / N;
-const RES = 384;                // terrain render mesh resolution
-const SEA_Y = 0;
-const CHUNKS = 6;               // tree chunk grid
-const SPEEDS = [0, 0.1, 1, 5, 30, 120];   // sim-days per real second
-
-// ---------- 2. rng ----------
-function xmur3(str){
-  let h = 1779033703 ^ str.length;
-  for(let i=0;i<str.length;i++){ h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = h<<13 | h>>>19; }
-  return function(){ h = Math.imul(h ^ h>>>16, 2246822507); h = Math.imul(h ^ h>>>13, 3266489909); return (h ^= h>>>16) >>> 0; };
-}
-function sfc32(a,b,c,d){
-  return function(){
-    a>>>=0; b>>>=0; c>>>=0; d>>>=0;
-    let t = (a + b) | 0;
-    a = b ^ b>>>9; b = c + (c<<3) | 0; c = (c<<21 | c>>>11);
-    d = d + 1 | 0; t = t + d | 0; c = c + t | 0;
-    return (t>>>0) / 4294967296;
-  };
-}
-function makeStream(s){ const h = xmur3(s); return sfc32(h(),h(),h(),h()); }
-const rr = (r,a,b)=> a + r()*(b-a);
-const ri = (r,a,b)=> Math.floor(a + r()*(b-a+1));
-const pick = (r,arr)=> arr[Math.floor(r()*arr.length)];
-const chance = (r,p)=> r() < p;
-
-// ---------- 3. math helpers ----------
-const clamp = (x,a,b)=> x<a?a:(x>b?b:x);
-const clamp01 = x=> x<0?0:(x>1?1:x);
-const lerp = (a,b,t)=> a+(b-a)*t;
-const smooth = t=>{ t=clamp01(t); return t*t*(3-2*t); };
-const dist2d = (ax,az,bx,bz)=> Math.hypot(ax-bx, az-bz);
-function lerpHex(h1,h2,t,out){ // hex ints -> {r,g,b} 0..1
-  const r1=(h1>>16&255)/255, g1=(h1>>8&255)/255, b1=(h1&255)/255;
-  const r2=(h2>>16&255)/255, g2=(h2>>8&255)/255, b2=(h2&255)/255;
-  out.r=lerp(r1,r2,t); out.g=lerp(g1,g2,t); out.b=lerp(b1,b2,t); return out;
-}
-function hexRGB(h){ return [ (h>>16&255)/255, (h>>8&255)/255, (h&255)/255 ]; }
-function ord(n){ const s=['th','st','nd','rd'], v=n%100; return n + (s[(v-20)%10] || s[v] || s[0]); }
-
-// ---------- 4. perlin ----------
-function makePerlin(rng){
-  const perm = new Uint8Array(512);
-  const p = []; for(let i=0;i<256;i++) p.push(i);
-  for(let i=255;i>0;i--){ const j=(rng()*(i+1))|0; const t=p[i]; p[i]=p[j]; p[j]=t; }
-  for(let i=0;i<512;i++) perm[i]=p[i&255];
-  const GX=[1,-1,0,0,0.7071,-0.7071,0.7071,-0.7071], GZ=[0,0,1,-1,0.7071,0.7071,-0.7071,-0.7071];
-  function fade(t){ return t*t*t*(t*(t*6-15)+10); }
-  function n2(x,y){
-    const X=Math.floor(x), Y=Math.floor(y);
-    const xf=x-X, yf=y-Y, xi=X&255, yi=Y&255;
-    const aa=perm[perm[xi]+yi]&7, ba=perm[perm[xi+1]+yi]&7, ab=perm[perm[xi]+yi+1]&7, bb=perm[perm[xi+1]+yi+1]&7;
-    const u=fade(xf), v=fade(yf);
-    const n00=GX[aa]*xf+GZ[aa]*yf, n10=GX[ba]*(xf-1)+GZ[ba]*yf;
-    const n01=GX[ab]*xf+GZ[ab]*(yf-1), n11=GX[bb]*(xf-1)+GZ[bb]*(yf-1);
-    return lerp(lerp(n00,n10,u), lerp(n01,n11,u), v); // ~[-0.71,0.71]
-  }
-  function fbm(x,y,oct,lac,gain){
-    lac=lac||2; gain=gain||0.5;
-    let a=0, amp=1, f=1, norm=0;
-    for(let i=0;i<oct;i++){ a += n2(x*f,y*f)*amp; norm+=amp; amp*=gain; f*=lac; }
-    return a/norm*1.4; // ~[-1,1]
-  }
-  return {n2, fbm};
-}
 
 // ---------- 5. names ----------
 const NAME = (()=>{
