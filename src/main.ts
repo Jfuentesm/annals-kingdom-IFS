@@ -4,6 +4,7 @@ import { W_SIZE, N, CELL, RES, SEA_Y, CHUNKS, SPEEDS } from './core/constants';
 import { xmur3, sfc32, makeStream, rr, ri, pick, chance } from './core/rng';
 import { clamp, clamp01, lerp, smooth, dist2d, lerpHex, hexRGB, ord } from './core/math';
 import { makePerlin } from './core/perlin';
+import { W, setW } from './state';
 
 /* =======================================================================
    ANNALS — Phase 1: The Land
@@ -241,7 +242,7 @@ function gbToGeometry(gb){
 /* =======================================================================
    WORLDGEN
    ======================================================================= */
-let W = null;   // the world
+// `W` (the world) now lives in ./state as a live binding; reassigned via setW() in forgeWorld.
 
 function idx(ix,iz){ return iz*N + ix; }
 function gridToWorld(i){ return (i/(N-1) - 0.5) * W_SIZE; }
@@ -6184,12 +6185,12 @@ async function forgeWorld(seed){
     await raf2();
     NAME.used.clear(); ARCH_CACHE.clear();
     disposeScene();
-    W = {
+    setW({
       seed, seedNum: xmur3(seed)(),
       rng: { gen: makeStream(seed+':gen'), det: makeStream(seed+':det'), amb: makeStream(seed+':amb'), psy: makeStream(seed+':psy') },
       clock: { day: 74.4, speed: 2 },
       labels: [], chunks: [], wheelMeshes: [], mills: [], towers: [], rivers: [], lakes: [], bridges: [], roads: []
-    };
+    });
     W.noise = makePerlin(W.rng.gen);
     for(const [label, fn] of GEN_STEPS){
       addStep(label);
